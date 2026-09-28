@@ -30,12 +30,14 @@ public sealed class ProbeCommand : ICommand
     public string Description => "Test-only HsmAdapter public API probe";
     public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
     {
-        response = "Usage: hsmadapterprobe ready [plugin-name ...] | <player> <render|renew|persistent|shrink|dispose|clear>";
+        response = "Usage: hsmadapterprobe ready [URI-escaped-plugin-name ...] | <player> <render|renew|persistent|shrink|dispose|clear>";
         if (!sender.CheckPermission(PlayerPermissions.ServerConsoleCommands, out _)) return false;
         if (arguments.Count >= 1 && arguments.At(0) == "ready")
         {
+            // Remote admin splits on spaces, so encode each exact plugin name as one URI token.
             var names = arguments.Count == 1 ? new[] { "ReinforcementsSystem" } :
-                Enumerable.Range(1, arguments.Count - 1).Select(i => arguments.At(i)).ToArray();
+                Enumerable.Range(1, arguments.Count - 1)
+                    .Select(i => Uri.UnescapeDataString(arguments.At(i))).ToArray();
             bool PluginReady(string name)
             {
                 if (PluginLoader.EnabledPlugins.Any(p => p.Name == name)) return true;
