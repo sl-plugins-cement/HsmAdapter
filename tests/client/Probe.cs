@@ -40,7 +40,13 @@ public sealed class ProbeCommand : ICommand
                     .Select(i => Uri.UnescapeDataString(arguments.At(i))).ToArray();
             bool PluginReady(string name)
             {
-                if (PluginLoader.EnabledPlugins.Any(p => p.Name == name)) return true;
+                var native = PluginLoader.EnabledPlugins.FirstOrDefault(p => p.Name == name);
+                if (native != null)
+                {
+                    // Some plugins return early from Enable when their own config disables the feature.
+                    var config = native.GetType().GetProperty("Config")?.GetValue(native);
+                    return config?.GetType().GetProperty("IsEnabled")?.GetValue(config) is not false;
+                }
                 var loader = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "Exiled.Loader");
                 var plugins = loader?.GetType("Exiled.Loader.Loader")?.GetProperty("Plugins")?.GetValue(null) as IEnumerable;
                 if (plugins == null || !PluginLoader.EnabledPlugins.Any(p => p.Name == "Exiled Loader")) return false;
