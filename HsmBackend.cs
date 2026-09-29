@@ -7,11 +7,18 @@ using LabApi.Features.Console;
 
 namespace HsmAdapter;
 
-internal sealed class HsmBackend : ITextBackend
+internal sealed class HsmBackend : ITextBackend, IRichNoticeBackend
 {
     public ScreenTextFeatures Features => ScreenTextFeatures.CenterAlignment | ScreenTextFeatures.Wrap;
 
     public ITextHandle CreateHandle(ReferenceHub hub, string group, string key) => new HsmTextHandle(this, hub, group, key);
+
+    public ITextFrame PrepareRichNotice(string richText, int fontSize, float lineHeight, ScreenRect rect) =>
+        new HsmTextFrame(new System.Collections.Generic.List<RenderedRow> { new RenderedRow {
+            Text = richText, X = (float)Math.Floor((rect.X + rect.Width / 2 - 960) * 2),
+            Y = (float)Math.Floor(rect.Y), Size = fontSize, Anchor = VerticalAnchor.Top,
+            LineHeight = lineHeight, SyncSpeed = HsmSyncSpeed.Fast
+        } });
 
     public ScreenTextResult Prepare(ScreenTextLayout layout, out ITextFrame? frame)
     {

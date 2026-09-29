@@ -45,6 +45,7 @@ public static class Hints
     internal static void Release(HintScope scope) => Scopes.Remove(scope);
     internal static void ClearAll()
     {
+        NoticeCoordinator.ClearAll();
         foreach (var scope in Scopes.ToArray()) scope.Clear();
     }
     internal static void PlayerLeft(PlayerLeftEventArgs ev)
@@ -53,6 +54,7 @@ public static class Hints
         if (hub == null) return;
         // HSM may already have destructed the display in its own Left handler.
         foreach (var scope in Scopes.ToArray()) scope.ForgetDisconnected(hub);
+        NoticeCoordinator.Forget(hub);
     }
     internal static IEnumerator<float> Sweep()
     {
@@ -63,6 +65,8 @@ public static class Hints
                 try { scope.Sweep(); }
                 catch (Exception ex) { Logger.Error("[HsmAdapter] Hint cleanup failed: " + ex); }
             }
+            try { NoticeCoordinator.Sweep(); }
+            catch (Exception ex) { Logger.Error("[HsmAdapter] Notice sweep failed: " + ex); }
             yield return Timing.WaitForSeconds(0.1f);
         }
     }
@@ -74,7 +78,7 @@ public sealed class AdapterPlugin : Plugin
     public override string Name => "HsmAdapter";
     public override string Author => "sl-plugins-cement";
     public override string Description => "Owned, structured hint layouts backed by HintServiceMeow";
-    public override Version Version => new(1, 2, 0);
+    public override Version Version => new(1, 3, 0);
     public override Version RequiredApiVersion => new(1, 1, 0);
     public override LoadPriority Priority => LoadPriority.High;
     public override void Enable()

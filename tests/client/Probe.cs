@@ -78,6 +78,56 @@ public sealed class ProbeCommand : ICommand
         TextRow Row(string text, int size = 28, TextCase casing = TextCase.Preserve) => new(size, new TextSpan(text, casing: casing));
         switch (arguments.At(1))
         {
+            case "priority-start":
+                ProbePlugin.Main.Clear(); ProbePlugin.Other.Clear();
+                if (ProbePlugin.Main.ShowNotice(player, "priority-low", NoticeRegion.Center,
+                    new[] { Row("低优先级 · 先加入", 28) }, 90, 1) != NoticeResult.Visible)
+                    throw new InvalidOperationException("First low notice not visible");
+                if (ProbePlugin.Other.ShowNotice(player, "priority-tie", NoticeRegion.Center,
+                    new[] { Row("同优先级 · 后加入", 28) }, 90, 1) != NoticeResult.Visible)
+                    throw new InvalidOperationException("Second low notice not visible");
+                if (ProbePlugin.Main.ShowHsmNotice(player, "priority-high", NoticeRegion.Center,
+                    "<color=#FFD479>高优先级 · 后加入</color>", 90, 10, fontSize: 28) != NoticeResult.Visible)
+                    throw new InvalidOperationException("High notice not visible");
+                if (ProbePlugin.Other.GetNoticeState(player, "priority-tie") != NoticeResult.Queued)
+                    throw new InvalidOperationException("Priority did not queue lower notice");
+                break;
+            case "priority-refresh":
+                if (ProbePlugin.Main.ShowNotice(player, "priority-low", NoticeRegion.Center,
+                    new[] { Row("低优先级 · 原位置刷新", 28) }, 90, 1) != NoticeResult.Visible ||
+                    ProbePlugin.Other.GetNoticeState(player, "priority-tie") != NoticeResult.Queued)
+                    throw new InvalidOperationException("Refresh changed insertion order");
+                break;
+            case "priority-cover":
+                if (ProbePlugin.Other.ShowHsmReserved(player, "priority-cover",
+                    new HsmHintLayout("<color=#63D9FF>保留区域</color>", 0, 460, 30),
+                    new ScreenRect(510, 452, 900, 260)) != NoticeResult.Visible)
+                    throw new InvalidOperationException("Reservation rejected");
+                if (ProbePlugin.Main.GetNoticeState(player, "priority-high") != NoticeResult.Queued)
+                    throw new InvalidOperationException("Reservation did not queue notice");
+                if (ProbePlugin.Main.ShowNotice(player, "priority-timed", NoticeRegion.Center,
+                    new[] { Row("短时隐藏提示", 28) }, 80, 100, 2) != NoticeResult.Queued)
+                    throw new InvalidOperationException("Timed hidden notice not queued");
+                break;
+            case "priority-release":
+                ProbePlugin.Other.Remove(player, "priority-cover");
+                break;
+            case "priority-high":
+                ProbePlugin.Main.Remove(player, "priority-high");
+                break;
+            case "priority-clear":
+                ProbePlugin.Main.Clear(player);
+                break;
+            case "priority-dispose":
+                ProbePlugin.Other.Dispose();
+                ProbePlugin.Other = HsmAdapter.Hints.Acquire("HsmAdapterProbe.Other");
+                break;
+            case "priority-check":
+                response = "NOTICE_STATE high=" + ProbePlugin.Main.GetNoticeState(player, "priority-high") +
+                    " low=" + ProbePlugin.Main.GetNoticeState(player, "priority-low") +
+                    " tie=" + ProbePlugin.Other.GetNoticeState(player, "priority-tie") +
+                    " timed=" + ProbePlugin.Main.GetNoticeState(player, "priority-timed");
+                return true;
             case "screen":
                 ProbePlugin.Main.Clear();
                 ProbePlugin.Other.ShowRaw(player, "other", "<uppercase>另一个作用域</uppercase>", 0, 230);

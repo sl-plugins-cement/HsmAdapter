@@ -32,6 +32,88 @@ public sealed class HintScope : IDisposable
         return ScreenTextResult.Shown;
     }
 
+    /// <summary>Places structured text in a shared priority region for this player.</summary>
+    public NoticeResult ShowNotice(Player player, string key, NoticeRegion region, IEnumerable<TextRow> rows,
+        float height = 100, int priority = 0, float duration = 0)
+    {
+        Validate(player, key, duration);
+        var copy = rows?.ToArray() ?? throw new ArgumentNullException(nameof(rows));
+        if (copy.Length == 0 || copy.Any(r => r == null)) throw new ArgumentException("Supply rows.", nameof(rows));
+        return ShowNoticeCore(player, key, region, copy, null, height, priority, duration, 24, 0);
+    }
+
+    /// <summary>Places HSM rich text in a shared priority region; height is caller-declared.</summary>
+    public NoticeResult ShowHsmNotice(Player player, string key, NoticeRegion region, string richText,
+        float height = 100, int priority = 0, float duration = 0, int fontSize = 24, float lineHeight = 0)
+    {
+        Validate(player, key, duration);
+        if (richText == null) throw new ArgumentNullException(nameof(richText));
+        if (fontSize < 1 || fontSize > 120) throw new ArgumentOutOfRangeException(nameof(fontSize));
+        TextLayout.ValidateNumber(lineHeight, nameof(lineHeight));
+        if (lineHeight < 0) throw new ArgumentOutOfRangeException(nameof(lineHeight));
+        return ShowNoticeCore(player, key, region, null, richText, height, priority, duration, fontSize, lineHeight);
+    }
+
+    private NoticeResult ShowNoticeCore(Player player, string key, NoticeRegion region, IReadOnlyList<TextRow>? rows,
+        string? richText, float height, int priority, float duration, int fontSize, float lineHeight)
+    {
+        if (!Enum.IsDefined(typeof(NoticeRegion), region)) throw new ArgumentOutOfRangeException(nameof(region));
+        TextLayout.ValidateNumber(height, nameof(height));
+        var bounds = NoticeCoordinator.RegionBounds(region);
+        if (height <= 0 || height > bounds.Height) return NoticeResult.DoesNotFit;
+        if (!Hints.Enabled || player.IsDestroyed) return NoticeResult.Unavailable;
+        var backend = TextBackends.Screen;
+        if (backend == null) return NoticeResult.Unavailable;
+        if (richText != null && backend is not IRichNoticeBackend) return NoticeResult.Unsupported;
+        var layout = new ScreenRect(bounds.X, bounds.Y, bounds.Width, height);
+        if (richText == null)
+        {
+            var result = backend.Prepare(new ScreenTextLayout(layout, rows!, verticalAlignment: VerticalAnchor.Middle), out _);
+            if (result != ScreenTextResult.Shown) return result == ScreenTextResult.Unsupported ? NoticeResult.Unsupported : NoticeResult.DoesNotFit;
+        }
+        return NoticeCoordinator.Show(this, player, key, region, rows, richText, height, priority,
+            duration, fontSize, lineHeight, backend);
+    }
+
+    /// <summary>Returns this scope's current notice state for a key, or null if it has no notice.</summary>
+    public NoticeResult? GetNoticeState(Player player, string key)
+    {
+        Check();
+        if (player == null) throw new ArgumentNullException(nameof(player));
+        if (key == null) throw new ArgumentNullException(nameof(key));
+        return NoticeCoordinator.State(this, player.ReferenceHub, key);
+    }
+
+    /// <summary>Shows legacy HSM rich text while reserving its declared screen rectangle under the same key.</summary>
+    public NoticeResult ShowHsmReserved(Player player, string key, HsmHintLayout layout,
+        ScreenRect reservation, float duration = 0)
+    {
+        Validate(player, key, duration);
+        if (layout == null) throw new ArgumentNullException(nameof(layout));
+        ValidateReservation(reservation);
+        if (!ShowHsmCore(player, key, layout, null, duration, preserveCoordinator: true)) return NoticeResult.Unavailable;
+        NoticeCoordinator.Reserve(this, player.ReferenceHub, key, reservation, duration);
+        return NoticeResult.Visible;
+    }
+
+    /// <summary>Reserves a screen rectangle for a caller-owned visual under this scope's key.</summary>
+    public NoticeResult ReserveScreen(Player player, string key, ScreenRect reservation, float duration = 0)
+    {
+        Validate(player, key, duration);
+        ValidateReservation(reservation);
+        if (!Hints.Enabled || player.IsDestroyed) return NoticeResult.Unavailable;
+        NoticeCoordinator.ReserveOnly(this, player.ReferenceHub, key, reservation, duration);
+        return NoticeResult.Visible;
+    }
+
+    private static void ValidateReservation(ScreenRect reservation)
+    {
+        if (reservation == null) throw new ArgumentNullException(nameof(reservation));
+        if (reservation.X < 0 || reservation.Y < 0 ||
+            (double)reservation.X + reservation.Width > 1920 || (double)reservation.Y + reservation.Height > 1080)
+            throw new ArgumentOutOfRangeException(nameof(reservation));
+    }
+
     /// <summary>Passes caller-owned rich text to HSM without layout repair or case normalization.</summary>
     public bool ShowRaw(Player player, string key, string richText, float x, float y, int fontSize = 24,
         VerticalAnchor anchor = VerticalAnchor.Top, float duration = 0)
@@ -56,7 +138,8 @@ public sealed class HintScope : IDisposable
             layout.ForceMembershipUpdate, layout.FastMembershipUpdate);
     }
 
-    private bool ShowHsmCore(Player player, string key, HsmHintLayout layout, Func<string>? autoText, float duration)
+    private bool ShowHsmCore(Player player, string key, HsmHintLayout layout, Func<string>? autoText, float duration,
+        bool preserveCoordinator = false)
     {
         if (layout == null) throw new ArgumentNullException(nameof(layout));
         return Put(player, key, new List<RenderedRow> { new RenderedRow {
@@ -64,19 +147,20 @@ public sealed class HintScope : IDisposable
             Anchor = layout.Anchor, Alignment = layout.Alignment, SyncSpeed = layout.SyncSpeed,
             LineHeight = layout.LineHeight, Hide = layout.Hide, AutoText = autoText
         } }, duration, layout.FastUpdate, layout.ForceUpdate,
-            layout.ForceMembershipUpdate, layout.FastMembershipUpdate);
+            layout.ForceMembershipUpdate, layout.FastMembershipUpdate, preserveCoordinator);
     }
 
     private bool Put(Player player, string key, List<RenderedRow> rows, float duration,
         bool fastUpdate = true, bool forceUpdate = true,
-        bool forceMembershipUpdate = true, bool fastMembershipUpdate = true)
+        bool forceMembershipUpdate = true, bool fastMembershipUpdate = true,
+        bool preserveCoordinator = false)
     {
         Validate(player, key, duration);
         if (!Hints.Enabled || player.IsDestroyed) return false;
         var backend = HsmBackend.Ready();
         if (backend == null) return false;
         Put(player, key, backend, new HsmTextFrame(rows, fastUpdate, forceUpdate,
-            forceMembershipUpdate, fastMembershipUpdate), duration);
+            forceMembershipUpdate, fastMembershipUpdate), duration, preserveCoordinator);
         return true;
     }
     private void Validate(Player player, string key, float duration)
@@ -87,7 +171,8 @@ public sealed class HintScope : IDisposable
         TextLayout.ValidateNumber(duration, nameof(duration));
         if (duration < 0) throw new ArgumentOutOfRangeException(nameof(duration));
     }
-    private void Put(Player player, string key, ITextBackend backend, ITextFrame frame, float duration)
+    private void Put(Player player, string key, ITextBackend backend, ITextFrame frame, float duration,
+        bool preserveCoordinator = false)
     {
         var index = (player.ReferenceHub, key);
         _entries.TryGetValue(index, out var entry);
@@ -107,6 +192,7 @@ public sealed class HintScope : IDisposable
             entry.Handle.Update(frame);
             // Even unchanged content renews the one deadline on this entry.
             entry.Expires = duration == 0 ? float.PositiveInfinity : Time.realtimeSinceStartup + duration;
+            if (!preserveCoordinator) NoticeCoordinator.Remove(this, player.ReferenceHub, key);
         }
         catch
         {
@@ -129,9 +215,27 @@ public sealed class HintScope : IDisposable
     }
     private void RemoveEntry(ReferenceHub hub, string key)
     {
+        if (!_entries.TryGetValue((hub, key), out var entry)) { NoticeCoordinator.Remove(this, hub, key); return; }
+        try { if (hub == null) entry.Handle.Forget(); else entry.Handle.Remove(true); }
+        finally { _entries.Remove((hub!, key)); NoticeCoordinator.Remove(this, hub, key); }
+    }
+    internal void RemoveRendered(ReferenceHub hub, string key)
+    {
         if (!_entries.TryGetValue((hub, key), out var entry)) return;
         try { if (hub == null) entry.Handle.Forget(); else entry.Handle.Remove(true); }
         finally { _entries.Remove((hub!, key)); }
+    }
+    internal void PutNotice(ReferenceHub hub, string key, ITextBackend backend, ITextFrame frame)
+    {
+        var index = (hub, key);
+        if (_entries.TryGetValue(index, out var previous) && !ReferenceEquals(previous.Backend, backend)) RemoveRendered(hub, key);
+        if (!_entries.TryGetValue(index, out var entry))
+        {
+            entry = new Entry(backend, backend.CreateHandle(hub, _group, key));
+            _entries.Add(index, entry);
+        }
+        try { entry.Handle.Update(frame); entry.Expires = float.PositiveInfinity; }
+        catch { RemoveRendered(hub, key); throw; }
     }
     public void Clear(Player player)
     {
@@ -144,7 +248,9 @@ public sealed class HintScope : IDisposable
         Check();
         if (ReferenceEquals(hub, null)) throw new ArgumentNullException(nameof(hub));
         foreach (var key in _entries.Keys.Where(k => ReferenceEquals(k.Hub, hub)).ToArray())
-            TryRemove(key.Hub, key.Key);
+            try { RemoveRendered(key.Hub, key.Key); }
+            catch (Exception ex) { LabApi.Features.Console.Logger.Error("[HsmAdapter] Hint cleanup failed: " + ex); }
+        NoticeCoordinator.RemovePlayer(this, hub);
     }
     /// <summary>Releases a departed player's entries after HSM may have destructed its display.</summary>
     public void ForgetDisconnected(ReferenceHub? hub)
@@ -157,11 +263,15 @@ public sealed class HintScope : IDisposable
             entry.Handle.Forget();
             _entries.Remove(key);
         }
+        NoticeCoordinator.RemovePlayer(this, hub, false);
     }
     public void Clear()
     {
         Check();
-        foreach (var key in _entries.Keys.ToArray()) TryRemove(key.Hub, key.Key);
+        foreach (var key in _entries.Keys.ToArray())
+            try { RemoveRendered(key.Hub, key.Key); }
+            catch (Exception ex) { LabApi.Features.Console.Logger.Error("[HsmAdapter] Hint cleanup failed: " + ex); }
+        NoticeCoordinator.RemoveScope(this);
     }
     private void TryRemove(ReferenceHub hub, string key)
     {

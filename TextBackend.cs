@@ -14,6 +14,10 @@ internal interface ITextBackend
     ScreenTextResult Prepare(ScreenTextLayout layout, out ITextFrame? frame);
     ITextHandle CreateHandle(ReferenceHub hub, string group, string key);
 }
+internal interface IRichNoticeBackend
+{
+    ITextFrame PrepareRichNotice(string richText, int fontSize, float lineHeight, ScreenRect rect);
+}
 internal static class TextBackends
 {
     internal static ITextBackend? Screen => HsmBackend.Ready();

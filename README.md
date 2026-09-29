@@ -37,6 +37,44 @@ replaces its rows and expiry, including timed-to-persistent replacement. `Clear(
 hints in that scope. Disabling the adapter clears adapter-owned hints; consumers can reuse their
 scopes after it is enabled again.
 
+## Shared notice regions
+
+Use `ShowNotice(player, key, region, rows, height, priority, duration)` for portable
+priority-managed alerts. `NoticeRegion.Top`, `Center`, and `Bottom` occupy centered reference-canvas
+rectangles `(510,260,900,172)`, `(510,452,900,260)`, and `(510,732,900,218)`. The 0–260
+native broadcast band stays outside managed placement; the regions have 20-unit gaps. Within a region,
+higher priorities appear first; equal priorities retain their original insertion order on refresh.
+Accepted notices stack downward with a 12-unit gap. A notice that cannot fit waits for space.
+`NoticeResult.Visible` and `Queued` both mean accepted; `Unavailable`, `Unsupported`, and
+`DoesNotFit` leave the existing key and expiry unchanged. `GetNoticeState(player, key)` returns
+the current visible/queued state for a scope-owned notice, or `null` after removal or expiry.
+Placement is coordinated across scopes for each player independently.
+
+`duration` starts when the key is submitted or refreshed, including while queued. An expired
+queued notice never appears later. `Remove`, `Clear`, disconnect, round reset, and scope disposal
+release its placement. A successful call to another display API with the same key replaces the
+notice; a rejected call preserves it.
+
+For existing configurable HSM markup, `ShowHsmNotice(player, key, region, richText, height,
+priority, duration, fontSize, lineHeight)` uses the same queue and placement policy while keeping
+HSM's rich-text parser. The caller declares the rendered height; markup can exceed that declaration,
+so verify complex templates on a client. This compatibility path requires an HSM-capable backend.
+
+`ShowHsmReserved(player, key, layout, reservation, duration)` displays a legacy `HsmHintLayout`
+and reserves its `ScreenRect` in the shared reference canvas under the same key. The reservation
+blocks overlapping notices until that visual is replaced, removed, expired, or its scope is cleared.
+Use it for legacy panels whose screen footprint must coexist with region notices. The reservation
+is a placement declaration, not clipping of HSM rich text.
+
+For a visual owned outside the adapter, `ReserveScreen(player, key, reservation, duration)`
+declares only its footprint. Use the same duration as the external visual and call `Remove` if it
+ends early. For native broadcasts that queue on the client, send time may precede visible time;
+the fixed native band above protects managed notices independently of that uncertain lifetime.
+Reservations protect only the caller-declared rectangle and deadline. Refreshing the same key
+renews the deadline; the reservation also clears on player
+disconnect, round reset, or scope disposal. A successful adapter display call using that key
+replaces the reservation.
+
 For existing HSM layouts, `ShowHsm(player, key, new HsmHintLayout(richText, x, y, fontSize,
 anchor, alignment, syncSpeed, fastUpdate, lineHeight, hide, forceUpdate,
 forceMembershipUpdate, fastMembershipUpdate), duration)` keeps HSM coordinates,
@@ -121,5 +159,4 @@ real-client verification; this is not a general TextMeshPro layout engine.
 
 `ShowRaw` retains caller-owned HSM rich text and coordinates. It shares ownership and expiry,
 but makes no casing, wrapping, spacing or markup-safety guarantee. Existing providers can remain
-in place while individual features migrate. The adapter does not allocate screen lanes across
-plugins; consumers must continue using their product's named lane constants.
+in place while individual features migrate.
