@@ -78,7 +78,7 @@ public sealed class AdapterPlugin : Plugin
     public override string Name => "HsmAdapter";
     public override string Author => "sl-plugins-cement";
     public override string Description => "Owned, structured hint layouts backed by HintServiceMeow";
-    public override Version Version => new(1, 3, 0);
+    public override Version Version => new(1, 3, 1);
     public override Version RequiredApiVersion => new(1, 1, 0);
     public override LoadPriority Priority => LoadPriority.High;
     public override void Enable()
