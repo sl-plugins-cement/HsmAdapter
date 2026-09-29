@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using LabApi.Features.Wrappers;
 using UnityEngine;
 
@@ -10,7 +12,7 @@ namespace HsmAdapter;
 public sealed class HintScope : IDisposable
 {
     private readonly string _group;
-    private readonly Dictionary<(ReferenceHub Hub, string Key), Entry> _entries = new();
+    private readonly Dictionary<(ReferenceHub Hub, string Key), Entry> _entries = new(EntryKeyComparer.Instance);
     private bool _disposed;
     internal HintScope(string owner, string? groupName = null) => _group =
         (groupName ?? "HsmAdapter." + owner) + "." + Guid.NewGuid().ToString("N");
@@ -217,12 +219,16 @@ public sealed class HintScope : IDisposable
     {
         if (!_entries.TryGetValue((hub, key), out var entry)) { NoticeCoordinator.Remove(this, hub, key); return; }
         try { if (hub == null) entry.Handle.Forget(); else entry.Handle.Remove(true); }
+        // HSM disposes a leaving player's display before other PlayerLeft handlers run; its hints are already gone.
+        catch (TargetInvocationException ex) when (ex.InnerException is ObjectDisposedException) { }
         finally { _entries.Remove((hub!, key)); NoticeCoordinator.Remove(this, hub, key); }
     }
     internal void RemoveRendered(ReferenceHub hub, string key)
     {
         if (!_entries.TryGetValue((hub, key), out var entry)) return;
         try { if (hub == null) entry.Handle.Forget(); else entry.Handle.Remove(true); }
+        // HSM disposes a leaving player's display before other PlayerLeft handlers run; its hints are already gone.
+        catch (TargetInvocationException ex) when (ex.InnerException is ObjectDisposedException) { }
         finally { _entries.Remove((hub!, key)); }
     }
     internal void PutNotice(ReferenceHub hub, string key, ITextBackend backend, ITextFrame frame)
@@ -293,6 +299,18 @@ public sealed class HintScope : IDisposable
     {
         Hints.CheckThread();
         if (_disposed) throw new ObjectDisposedException(nameof(HintScope));
+    }
+    /// <summary>
+    /// Compares hubs by reference. ReferenceHub.GetHashCode reads its GameObject, which throws once the hub is
+    /// destroyed, so a value-hashed key could never be found again to clean up a disconnected player.
+    /// </summary>
+    private sealed class EntryKeyComparer : IEqualityComparer<(ReferenceHub Hub, string Key)>
+    {
+        internal static readonly EntryKeyComparer Instance = new();
+        public bool Equals((ReferenceHub Hub, string Key) x, (ReferenceHub Hub, string Key) y)
+            => ReferenceEquals(x.Hub, y.Hub) && string.Equals(x.Key, y.Key, StringComparison.Ordinal);
+        public int GetHashCode((ReferenceHub Hub, string Key) key)
+            => RuntimeHelpers.GetHashCode(key.Hub) * 31 + StringComparer.Ordinal.GetHashCode(key.Key);
     }
     private sealed class Entry
     {

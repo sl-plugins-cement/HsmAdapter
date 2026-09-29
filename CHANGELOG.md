@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.1
+
+- Clean up hints of disconnected players: scope entries are keyed by hub reference, so a destroyed
+  player's entries can still be found and released, and removing a hint after HintServiceMeow disposed
+  the player's display no longer throws.
+
+## 1.3.0
+
+- Add shared priority notice regions with legacy reservations; managed notices sit below the native
+  broadcast band.
+
 ## 1.2.0
 
 - Add explicit HSM compatibility layouts for fixed and dynamic hints, including alignment,
