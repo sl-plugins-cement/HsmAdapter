@@ -29,6 +29,20 @@ public static class Hints
     {
         get { CheckThread(); return Enabled ? TextBackends.Screen?.Features ?? ScreenTextFeatures.None : ScreenTextFeatures.None; }
     }
+    /// <summary>
+    /// Text that <paramref name="player"/>'s own client renders as the key bound to Server-Specific keybind
+    /// <paramref name="settingId"/>, in the native "[Z]" form, or the client's localized "key not assigned"
+    /// (for example "[未分配键位]") when none is bound. Embed it in hint text shown to that player. Returns
+    /// <paramref name="fallback"/> when HSM is unavailable or this player's display cannot carry key parameters.
+    /// </summary>
+    public static string KeyToken(LabApi.Features.Wrappers.Player player, int settingId, string fallback)
+    {
+        CheckThread();
+        if (!Enabled || player?.ReferenceHub == null) return fallback;
+        var backend = HsmBackend.Ready();
+        return backend != null && KeyTokens.Ensure(backend, player.ReferenceHub) ? KeyTokens.Marker(settingId) : fallback;
+    }
+
     public static HintScope Acquire(string owner, string? groupName = null)
     {
         CheckThread();

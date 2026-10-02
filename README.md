@@ -37,6 +37,22 @@ replaces its rows and expiry, including timed-to-persistent replacement. `Clear(
 hints in that scope. Disabling the adapter clears adapter-owned hints; consumers can reuse their
 scopes after it is enabled again.
 
+## Key names
+
+`Hints.KeyToken(player, settingId, fallback)` returns text that the player's own client renders as
+the key bound to a Server-Specific keybind, in the native `[Z]` form, or its localized "key not
+assigned" (`[未分配键位]` in Simplified Chinese) when none is bound. Embed it in any hint text for
+that player. The server never learns the binding: HSM strips braces and sends one empty parameter,
+so the token is a private-use marker, and for a player who receives tokens the adapter swaps HSM's
+built-in network output for one that sends the same hint with a native `SSKeybindHintParameter`
+per marker. When HSM is missing or lacks the output API the call returns `fallback`. HSM centres
+lines on the marker's width, not the rendered key, so a long key name shifts a centred line slightly.
+
+```csharp
+string key = HsmAdapter.Hints.KeyToken(player, AbilityKeys.SettingId(AbilityKey.Ability1), "[技能1]");
+hud.ShowRaw(player, "abilities", key + " 火箭筒", 0, 1013, 20, VerticalAnchor.Middle);
+```
+
 ## Shared notice regions
 
 Use `ShowNotice(player, key, region, rows, height, priority, duration)` for portable
