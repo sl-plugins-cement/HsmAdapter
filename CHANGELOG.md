@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0
+
+- Add `Hints.KeyToken`: hint text that each client renders as its own bound key for a Server-Specific
+  keybind, or its localized "key not assigned", through native keybind hint parameters.
+
 ## 1.3.1
 
 - Clean up hints of disconnected players: scope entries are keyed by hub reference, so a destroyed
