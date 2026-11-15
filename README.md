@@ -107,6 +107,8 @@ prefix and appends a unique scope suffix so each consumer retains independent ow
 in-place changes and membership changes. If enabled, `fastUpdate` and `fastMembershipUpdate`
 choose HSM's fast or normal schedule. All four default to `true`; HSM still schedules its native
 updates when the extra force request is disabled.
+The adapter sets a 0.1 s minimum update interval on every HSM display it uses, so all lane changes to one player
+within 0.1 s coalesce into one composed message: at most 10 per second per player, whichever plugins changed lanes.
 The `ReferenceHub` overloads of `Remove` and `Clear` support callers that no longer have a LabAPI
 player wrapper. Use `ForgetDisconnected(hub)` after a disconnect if HSM may already have destroyed
 the display; the adapter also forgets its entries on LabAPI's player-left event.

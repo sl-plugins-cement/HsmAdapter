@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Linq.Expressions;
 using LabApi.Loader;
 using LabApi.Features.Console;
@@ -52,6 +53,15 @@ internal sealed class HsmBackend : ITextBackend, IRichNoticeBackend
     private readonly Assembly _assembly;
     private readonly Type? _dynamicHint;
     private readonly MethodInfo _get, _add, _remove, _update;
+    private readonly MethodInfo? _setMinUpdateInterval;
+    // Displays already given the update floor. Keyed weakly by the display, so a rejoining player's new display gets it too.
+    private readonly ConditionalWeakTable<object, object> _floored = new();
+
+    /// <summary>
+    /// The shortest interval between two composed hint messages to one player. HSM's own default is no floor (its scheduler
+    /// ticks at 30 Hz), so every plugin's lane changes inside 0.1 s coalesce into one message: at most 10 per second.
+    /// </summary>
+    internal static readonly TimeSpan MinimumUpdateInterval = TimeSpan.FromSeconds(0.1d);
     private readonly FieldInfo? _isDestructed;
     private readonly PropertyInfo _text, _x, _y, _size, _anchor, _id, _alignment;
     private readonly PropertyInfo? _lineHeight, _hide, _syncSpeed, _autoText;
@@ -78,6 +88,8 @@ internal sealed class HsmBackend : ITextBackend, IRichNoticeBackend
         _add = display.GetMethod("AddHint", new[] { abstractHint, typeof(string) }) ?? throw new MissingMethodException("AddHint");
         _remove = display.GetMethod("RemoveHint", new[] { abstractHint, typeof(string) }) ?? throw new MissingMethodException("RemoveHint");
         _update = display.GetMethod("ForceUpdate", new[] { typeof(bool) }) ?? throw new MissingMethodException("ForceUpdate");
+        _setMinUpdateInterval = display.GetMethod("SetMinUpdateInterval", new[] { typeof(TimeSpan) });
+        if (_setMinUpdateInterval == null) Logger.Warn("[HsmAdapter] This HSM has no SetMinUpdateInterval; hint updates are not rate-floored.");
         PropertyInfo Property(string name, Type? type = null)
         {
             var property = _hint.GetProperty(name);
@@ -144,7 +156,16 @@ internal sealed class HsmBackend : ITextBackend, IRichNoticeBackend
         catch { return null; }
     }
 
-    internal object Display(ReferenceHub hub) => _get.Invoke(null, new object[] { hub })!;
+    internal object Display(ReferenceHub hub)
+    {
+        var display = _get.Invoke(null, new object[] { hub })!;
+        if (_setMinUpdateInterval != null && !_floored.TryGetValue(display, out _))
+        {
+            _setMinUpdateInterval.Invoke(display, new object[] { MinimumUpdateInterval });
+            _floored.Add(display, display);
+        }
+        return display;
+    }
     internal bool IsDestructed(object display) => _isDestructed?.GetValue(display) is true;
     internal float? MeasureWidth(string richText, int fontSize)
     {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.2
+
+- Floor every HSM display it uses at a 0.1 s minimum update interval, so one player receives at most 10 composed
+  hint messages per second.
+
+## 1.4.1
+
+- Recover hint expiry and queued notice cleanup after outside cancellation of the MEC loop.
+- Report the plugin version consistently with the assembly version.
+
 ## 1.4.0
 
 - Add `Hints.KeyToken`: hint text that each client renders as its own bound key for a Server-Specific
