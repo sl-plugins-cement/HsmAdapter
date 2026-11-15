@@ -89,10 +89,11 @@ public static class Hints
 public sealed class AdapterPlugin : Plugin
 {
     private CoroutineHandle _sweep;
+    private float _nextSweepCheck;
     public override string Name => "HsmAdapter";
     public override string Author => "sl-plugins-cement";
     public override string Description => "Owned, structured hint layouts backed by HintServiceMeow";
-    public override Version Version => new(1, 3, 1);
+    public override Version Version => new(1, 4, 2);
     public override Version RequiredApiVersion => new(1, 1, 0);
     public override LoadPriority Priority => LoadPriority.High;
     public override void Enable()
@@ -102,14 +103,27 @@ public sealed class AdapterPlugin : Plugin
         ServerEvents.WaitingForPlayers += Hints.ClearAll;
         PlayerEvents.Left += Hints.PlayerLeft;
         _sweep = Timing.RunCoroutine(Hints.Sweep());
+        StaticUnityMethods.OnUpdate += EnsureSweepRunning;
         Logger.Info("[HsmAdapter] API 1 enabled; HSM readiness is checked when displaying hints.");
     }
     public override void Disable()
     {
         Hints.Enabled = false;
+        StaticUnityMethods.OnUpdate -= EnsureSweepRunning;
         ServerEvents.WaitingForPlayers -= Hints.ClearAll;
         PlayerEvents.Left -= Hints.PlayerLeft;
         Timing.KillCoroutines(_sweep);
         Hints.ClearAll();
+    }
+
+    private void EnsureSweepRunning()
+    {
+        float now = UnityEngine.Time.realtimeSinceStartup;
+        if (!Hints.Enabled || now < _nextSweepCheck) return;
+        _nextSweepCheck = now + 1f;
+        // Native Update survives another plugin cancelling the shared MEC coroutines.
+        if (Timing.IsRunning(_sweep)) return;
+        _sweep = Timing.RunCoroutine(Hints.Sweep());
+        Logger.Warn("[HsmAdapter] Restarted the stopped hint-expiry loop.");
     }
 }
